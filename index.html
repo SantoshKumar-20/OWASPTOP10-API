@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OWASP API Top 10 Educational Dashboard</title>
+  
+  <!-- Tailwind CSS CDN (Using standard Tailwind v3 Play CDN for style utility and responsive layouts) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              dark: '#0B0F19',
+              card: '#161D30',
+              accent: '#3B82F6',
+              accentLight: '#60A5FA',
+              danger: '#EF4444',
+              dangerBg: '#2D1B22',
+              safe: '#10B981',
+              safeBg: '#112D24',
+              warning: '#F59E0B',
+              warningBg: '#2D2316',
+            }
+          },
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            mono: ['Fira Code', 'JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- React & Babel CDNs (Babel is used to compile JSX dynamically in the browser for local zero-dependency runtime) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Custom styles -->
+  <style>
+    /* Custom global styles & scrollbar design to match premium dark-mode theme */
+    body {
+      font-family: 'Outfit', sans-serif;
+      scrollbar-width: thin;
+      scrollbar-color: #3b82f6 #0b0f19;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0B0F19;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1E293B;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3B82F6;
+    }
+
+    /* Custom Glassmorphism Card Style */
+    .glass-card {
+      background: rgba(22, 29, 48, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    }
+
+    .glass-card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Custom grid background */
+    .bg-grid {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="bg-brand-dark text-slate-100 min-h-screen overflow-x-hidden">
+  
+  <div id="root"></div>
+
+  <!-- Application Bundle -->
+  <script type="text/babel">
+    const vulnerabilities = [
+      {
+        id: "API1",
+        title: "API1:2023 Broken Object Level Authorization (BOLA)",
+        severity: "High",
+        description: "Occurs when an API does not perform appropriate authorization checks when accessing individual objects via IDs, exposing internal objects to unauthorized requests.",
+        concept: "APIs commonly expose endpoints that handle object identifiers (e.g., `/api/v1/trips/{trip_id}`). An attacker alters the ID parameter to point to a resource they do not own, and the lack of validation on the backend allows them to retrieve or modify data belonging to other users.",
+        remediation: [
+          "Implement a robust authorization mechanism that validates if the logged-in user owns or has access rights to the specific object ID requested.",
+          "Avoid relying on client-supplied keys/IDs without verification on the server-side.",
+          "Use random, unguessable UUIDv4 values as object identifiers instead of sequential integers.",
+          "Write comprehensive authorization tests for all endpoints that access identifiers."
+        ],
+        vulnerableCode: `// Express.js Vulnerable Code
+app.get('/api/users/profile', async (req, res) => {
+  // Vulnerability: Reads user ID directly from query/parameter or body,
+  // without validating if the current session owner matches this ID.
+  const userId = req.query.userId;
+  
+  const user = await db.findUserById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  res.json(user); // Returns arbitrary profile without checking authorization
+});`,
+        secureCode: `// Express.js Secure Code (Mitigated)
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
+  // Mitigation 1: Retrieve user identity from verified session token (JWT/Session)
+  const currentUserId = req.user.id; 
+  const requestedUserId = req.query.userId;
+
+  // Mitigation 2: Explicitly validate the session user matches the requested resource
+  if (currentUserId !== requestedUserId && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You do not own this resource' });
+  }
+
+  const user = await db.findUserById(requestedUserId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  res.json(user);
+});`
+      },
+      {
+        id: "API2",
+        title: "API2:2023 Broken Authentication",
+        severity: "High",
+        description: "Occurs when authentication mechanisms are poorly implemented, allowing attackers to compromise authentication tokens or exploit implementation flaws to assume identities.",
+        concept: "Authentication flows (such as login, password reset, or API key usage) are highly targeted. Common issues include lack of rate-limiting on login endpoints, exposing JWTs in URLs, using weak signature keys, or failing to validate token expiration.",
+        remediation: [
+          "Use established authentication standards (OAuth 2.0, OpenID Connect, standard JWT libraries).",
+          "Always enforce rate limiting on password reset, verification code, and login endpoints.",
+          "Implement robust password complexity controls and support multi-factor authentication (MFA).",
+          "Never put sensitive auth identifiers (tokens, session IDs) in query strings or URL paths."
+        ],
+        vulnerableCode: `// Express.js Vulnerable Login Endpoint
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  
+  // Vulnerability 1: Lack of rate limiting allows brute force attacks.
+  // Vulnerability 2: Poor credential check or insecure token expiration.
+  const user = await db.findUserByUsername(username);
+  if (user && user.password === password) { // plaintext password check
+    const token = jwt.sign({ id: user.id }, 'weak_secret_key'); // weak secret key
+    return res.json({ token });
+  }
+  
+  res.status(401).json({ error: 'Invalid credentials' });
+});`,
+        secureCode: `// Express.js Secure Login Endpoint
+const rateLimit = require('express-rate-limit');
+const bcrypt = require('bcrypt');
+
+// Mitigation 1: Enforce strict rate-limiting on authentication routes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login requests per window
+  message: 'Too many login attempts, please try again later'
+});
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+  const { username, password } = req.body;
+  
+  const user = await db.findUserByUsername(username);
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  // Mitigation 2: Securely verify cryptographic hashes, not plaintext
+  const isMatch = await bcrypt.compare(password, user.passwordHash);
+  if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+
+  // Mitigation 3: Sign tokens with strong system secrets and explicit expiration
+  const token = jwt.sign(
+    { id: user.id }, 
+    process.env.JWT_STRONG_SECRET, 
+    { expiresIn: '1h', algorithm: 'HS256' }
+  );
+
+  res.json({ token });
+});`
+      },
+      {
+        id: "API3",
+        title: "API3:2023 Broken Object Property Level Authorization (BOPLA)",
+        severity: "Medium",
+        description: "Occurs when endpoints expose too much internal object property data (Excessive Data Exposure) or accept modification of unauthorized internal properties (Mass Assignment).",
+        concept: "BOPLA combines two classic issues: Excessive Data Exposure (where the server returns more properties of an object than necessary, assuming the frontend will filter it) and Mass Assignment (where clients send property updates to fields they shouldn't edit, like `isAdmin = true`).",
+        remediation: [
+          "Avoid returning full database model serialization directly. Define Data Transfer Objects (DTOs) or explicitly select returned fields.",
+          "Avoid blindly binding client-supplied requests directly to internal objects (`req.body`).",
+          "Whitelist permitted properties that can be modified by the client."
+        ],
+        vulnerableCode: `// Express.js BOPLA Vulnerabilities
+// 1. Excessive Data Exposure (GET)
+app.get('/api/users/:id', async (req, res) => {
+  const user = await db.findUser(req.params.id);
+  res.json(user); // Vulnerability: returns user.passwordHash, resetToken, role, etc.
+});
+
+// 2. Mass Assignment (PUT)
+app.put('/api/users/:id', async (req, res) => {
+  const user = await db.findUser(req.params.id);
+  // Vulnerability: Blindly copies req.body parameters onto the database entity.
+  // Attackers can pass {"role": "admin"} or {"balance": 99999}.
+  Object.assign(user, req.body);
+  await db.save(user);
+  res.json(user);
+});`,
+        secureCode: `// Express.js BOPLA Mitigations
+// 1. Safe Projection (GET)
+app.get('/api/users/:id', async (req, res) => {
+  const user = await db.findUser(req.params.id);
+  
+  // Mitigation: Return only safe public properties (DTO pattern)
+  const safeProfile = {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl
+  };
+  res.json(safeProfile);
+});
+
+// 2. Strict Whitelisting (PUT)
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
+  const user = await db.findUser(req.params.id);
+  
+  // Mitigation: Explicitly destructure only allowed properties
+  const { displayName, avatarUrl } = req.body;
+  
+  // Only apply properties client is authorized to modify
+  if (displayName) user.displayName = displayName;
+  if (avatarUrl) user.avatarUrl = avatarUrl;
+  
+  await db.save(user);
+  res.json({ message: 'Profile updated successfully' });
+});`
+      },
+      {
+        id: "API4",
+        title: "API4:2023 Unrestricted Resource Consumption",
+        severity: "Medium",
+        description: "Occurs when API endpoints are not protected against excessive volume requests, file uploads, payload sizes, or intensive processing, causing Denial of Service (DoS) or increased cloud bills.",
+        concept: "APIs must limit client consumption of system resources. Without limits, an attacker can spam heavy SQL queries, upload multi-gigabyte files, cause memory exhaustion, or consume premium downstream API services, resulting in high resource consumption and outages.",
+        remediation: [
+          "Enforce maximum execution timeouts, upload limits, and request payload size limits.",
+          "Implement pagination with hard ceilings (e.g., maximum page size of 50).",
+          "Apply API rate limiting (throttling) globally and on resource-heavy routes.",
+          "Limit CPU/Memory footprints on third-party operations (like image rendering)."
+        ],
+        vulnerableCode: `// Express.js Vulnerable Server
+// Vulnerability 1: Lack of global rate limiting or payload limits
+app.post('/api/image/resize', async (req, res) => {
+  // Vulnerability 2: Reading unlimited page size from client request
+  const pageSize = req.query.limit || 1000000;
+  
+  const records = await db.fetchRecords(pageSize);
+  res.json(records); // Heavy SQL load + memory exhaustion
+});`,
+        secureCode: `// Express.js Secured Config
+const express = require('express');
+const app = express();
+
+// Mitigation 1: Define explicit JSON payload size limit globally
+app.use(express.json({ limit: '10kb' })); 
+
+// Mitigation 2: Enforce query bounds in API logic
+app.get('/api/records', async (req, res) => {
+  let limit = parseInt(req.query.limit, 10) || 20;
+  
+  // Hard ceiling: Client cannot request more than 100 items at a time
+  if (limit > 100) {
+    limit = 100;
+  }
+  
+  const page = parseInt(req.query.page, 10) || 1;
+  const offset = (page - 1) * limit;
+
+  const records = await db.fetchRecords(limit, offset);
+  res.json({ data: records, page, limit });
+});`
+      },
+      {
+        id: "API5",
+        title: "API5:2023 Broken Function Level Authorization (BFLA)",
+        severity: "High",
+        description: "Occurs when authentication and access control policies do not validate authorization based on hierarchies or functional access levels (e.g. general user calling administrative routes).",
+        concept: "BFLA happens when administrative or specialized endpoints are exposed without verifying the role of the caller. Attackers search for administration functions (e.g. changing `/api/v1/user/details` to `/api/v1/admin/delete_user`) and call them directly by guessing the path structure.",
+        remediation: [
+          "Implement a centralized access control middleware to map routes to roles (RBAC/ABAC).",
+          "By default, deny all access; explicitly authorize roles for sensitive API administrative endpoints.",
+          "Perform thorough testing to ensure normal users cannot invoke administrative actions."
+        ],
+        vulnerableCode: `// Express.js BFLA Vulnerability
+// Regular user actions are checked, but administrative functions are not restricted
+app.post('/api/admin/users/:id/delete', async (req, res) => {
+  // Vulnerability: Only verifies authentication token exists,
+  // but fails to verify if user's role is 'admin'.
+  const user = req.user; 
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  await db.deleteUser(req.params.id);
+  res.json({ message: 'User deleted' });
+});`,
+        secureCode: `// Express.js BFLA Mitigations
+// Helper RBAC middleware to enforce roles
+const requireRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: 'Forbidden: You do not have permissions for this action' 
+      });
+    }
+    next();
+  };
+};
+
+// Administrative function explicitly restricts access to authorized roles
+app.post(
+  '/api/admin/users/:id/delete', 
+  authenticateToken, 
+  requireRole(['admin']), // Mitigation: Explicit authorization check
+  async (req, res) => {
+    await db.deleteUser(req.params.id);
+    res.json({ message: 'User deleted successfully' });
+  }
+);`
+      },
+      {
+        id: "API6",
+        title: "API6:2023 Unrestricted Access to Sensitive Business Flows",
+        severity: "Medium",
+        description: "Occurs when an API exposes sensitive business workflows without adequate safeguards, allowing malicious actors to automate and abuse logic (e.g. buying out ticket stocks, spamming SMS, index scraping).",
+        concept: "Unlike technical bugs, this targets logic. If an API handles operations like buying items, reserving reservations, or sending SMS OTPs without transaction tracking or bot detection, an attacker can automate these processes, draining business resources or causing financial damage.",
+        remediation: [
+          "Identify sensitive flows (e.g., signups, checkouts, OTP requests) and implement specialized rate limits.",
+          "Use CAPTCHAs, bot-detection tools, and behavioral analysis to block automated scripts.",
+          "Implement step-up authentication (re-entering credentials, MFA validation) before critical actions."
+        ],
+        vulnerableCode: `// Express.js Vulnerable Business Flow
+app.post('/api/reminders/sms', async (req, res) => {
+  const { phoneNumber, message } = req.body;
+  
+  // Vulnerability: Anyone can call this endpoint repeatedly,
+  // triggering expensive third-party SMS Gateway APIs.
+  // No rate limits or phone verification.
+  await smsGateway.send(phoneNumber, message);
+  res.json({ success: true });
+});`,
+        secureCode: `// Express.js Protected Business Flow
+const RateLimit = require('express-rate-limit');
+
+// Mitigation 1: Enforce strict rate limits on OTP/SMS endpoints
+const smsLimiter = RateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour window
+  max: 3, // Limit each IP or user to 3 SMS requests per hour
+  message: 'SMS limit reached. Please wait before trying again.'
+});
+
+app.post('/api/reminders/sms', authenticateToken, smsLimiter, async (req, res) => {
+  const { phoneNumber, message } = req.body;
+  
+  // Mitigation 2: Additional validation for sensitive business rules
+  if (!phoneNumber.startsWith('+1')) {
+    return res.status(400).json({ error: 'International SMS not allowed' });
+  }
+
+  // Mitigation 3: Enforce captchas or tokens for non-interactive requests
+  if (!req.body.captchaToken) {
+    return res.status(400).json({ error: 'Missing security verification' });
+  }
+
+  const isHuman = await verifyCaptcha(req.body.captchaToken);
+  if (!isHuman) {
+    return res.status(403).json({ error: 'Bot signature detected' });
+  }
+
+  await smsGateway.send(phoneNumber, message);
+  res.json({ success: true });
+});`
+      },
+      {
+        id: "API7",
+        title: "API7:2023 Server Side Request Forgery (SSRF)",
+        severity: "High",
+        description: "Occurs when an API fetches a remote resource based on a client-provided URI without validating the destination, allowing attackers to force the application to send requests to internal resources.",
+        concept: "Server Side Request Forgery occurs when the server acts as a proxy to fetch a URL provided by the user. If the user provides a local IP (e.g. `http://127.0.0.1:8500`) or metadata addresses (like AWS IMDS `http://169.254.169.254`), the server might fetch it, leaking internal configuration data.",
+        remediation: [
+          "Validate and restrict client-provided URLs to an explicit whitelist of allowed domains.",
+          "Block requests pointing to internal subnets, localhost, and non-routable ranges (RFC 1918).",
+          "Do not forward raw HTTP responses or metadata from remote lookups directly to the client."
+        ],
+        vulnerableCode: `// Express.js SSRF Vulnerability
+const axios = require('axios');
+
+app.post('/api/preview-image', async (req, res) => {
+  const { imageUrl } = req.body;
+  
+  try {
+    // Vulnerability: Axios requests the remote site directly.
+    // An attacker can pass 'http://169.254.169.254/latest/meta-data/'
+    // or 'http://localhost:8080/admin/dashboard'.
+    const response = await axios.get(imageUrl);
+    res.send(response.data);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});`,
+        secureCode: `// Express.js SSRF Mitigation
+const axios = require('axios');
+const ip = require('ip');
+const { URL } = require('url');
+
+app.post('/api/preview-image', async (req, res) => {
+  const { imageUrl } = req.body;
+
+  try {
+    const parsedUrl = new URL(imageUrl);
+    
+    // Mitigation 1: Enforce HTTPS scheme only
+    if (parsedUrl.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Only HTTPS protocol is supported' });
+    }
+
+    // Mitigation 2: Restrict allowed domains if possible
+    const allowedDomains = ['images.unsplash.com', 'res.cloudinary.com'];
+    if (!allowedDomains.includes(parsedUrl.hostname)) {
+      return res.status(400).json({ error: 'Domain is not whitelisted' });
+    }
+
+    // Mitigation 3: Resolve IP and block private/non-routable/internal networks
+    const dns = require('dns').promises;
+    const lookup = await dns.lookup(parsedUrl.hostname);
+    const destinationIp = lookup.address;
+
+    if (ip.isPrivate(destinationIp) || ip.isLoopback(destinationIp)) {
+      return res.status(403).json({ error: 'Access to internal IP address is forbidden' });
+    }
+
+    const response = await axios.get(imageUrl, { timeout: 3000 });
+    res.send(response.data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch image preview' });
+  }
+});`
+      },
+      {
+        id: "API8",
+        title: "API8:2023 Security Misconfiguration",
+        severity: "Medium",
+        description: "Occurs when APIs have unhardened configurations, enable verbose debugging, leave test routes exposed, support insecure HTTP methods, or use permissive CORS headers.",
+        concept: "Security misconfigurations cover issues outside application code. Common cases include exposing debug consoles, enabling overly broad CORS policies (`Access-Control-Allow-Origin: *` with credentials), displaying verbose stack traces in production, or leaving default credentials active.",
+        remediation: [
+          "Disable debugging features and verbose error trace displays in production.",
+          "Restrict CORS permissions to trusted domains rather than using wildcard values.",
+          "Use automated scanners to audit infrastructure settings and HTTP headers (e.g. Helmet.js).",
+          "Remove unused endpoints, API versions, and default accounts before deployment."
+        ],
+        vulnerableCode: `// Express.js Insecure Settings
+const cors = require('cors');
+
+// Vulnerability 1: Permissive CORS exposing internal responses to any site
+app.use(cors({ origin: '*' }));
+
+// Vulnerability 2: Verbose stack traces leaked to client
+app.use((err, req, res, next) => {
+  res.status(500).json({
+    message: err.message,
+    stack: err.stack // Vulnerability: leaks folder paths, SQL queries, variables
+  });
+});`,
+        secureCode: `// Express.js Secured Settings
+const cors = require('cors');
+const helmet = require('helmet');
+
+// Mitigation 1: Add default secure HTTP headers using Helmet middleware
+app.use(helmet());
+
+// Mitigation 2: Configure CORS with explicit domains
+const allowedOrigins = ['https://dashboard.company.com'];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Blocked by CORS policy'));
+    }
+  }
+}));
+
+// Mitigation 3: Secure Error Handler
+app.use((err, req, res, next) => {
+  // Log full trace internally for devs, but hide from users
+  console.error(err.stack);
+  
+  res.status(500).json({
+    message: 'An internal server error occurred. Please contact support.'
+    // Mitigation: stack property omitted
+  });
+});`
+      },
+      {
+        id: "API9",
+        title: "API9:2023 Improper Inventory Management",
+        severity: "Low",
+        description: "Occurs when old, deprecated, or unpatched API versions are kept running and exposed alongside current versions, increasing the overall attack surface.",
+        concept: "Developers release new API versions (e.g. `/v2/`) but leave legacy versions (e.g. `/v1/`) running on the same server to avoid breaking old clients. These deprecated endpoints often lack security patches, rate limiting, and robust input validation, making them targets for attackers.",
+        remediation: [
+          "Retire and decommission old API endpoints and versions once deprecated.",
+          "Adopt automated inventory discovery tools to map active routes and endpoints.",
+          "Apply security controls (like authentication and rate limits) uniformly across all active API versions."
+        ],
+        vulnerableCode: `// Express.js Routing (Incomplete Inventory)
+// Active route (/v2/) contains robust authorization
+app.get('/api/v2/user/profile', authenticateToken, checkBOLA, async (req, res) => {
+  const profile = await db.getUserProfile(req.user.id);
+  res.json(profile);
+});
+
+// Legacy route (/v1/) left active for backwards compatibility
+// Vulnerability: Lacks BOLA validation middleware
+app.get('/api/v1/user/profile', authenticateToken, async (req, res) => {
+  const targetId = req.query.id;
+  const profile = await db.getUserProfile(targetId); // BOLA present here
+  res.json(profile);
+});`,
+        secureCode: `// Express.js Routing (Remediated Inventory)
+// Mitigation 1: Explicitly decommission legacy routes
+app.use('/api/v1/*', (req, res) => {
+  res.status(410).json({
+    error: 'API Version 1 is deprecated and no longer supported. Please upgrade to /api/v2/'
+  });
+});
+
+// Mitigation 2: Ensure uniform security controls if legacy routes must run
+// Map both versions through the same authorization middleware
+app.get('/api/v2/user/profile', authenticateToken, checkBOLA, async (req, res) => {
+  const profile = await db.getUserProfile(req.user.id);
+  res.json(profile);
+});`
+      },
+      {
+        id: "API10",
+        title: "API10:2023 Unsafe Consumption of APIs",
+        severity: "Medium",
+        description: "Occurs when an API trusts data received from third-party APIs without proper validation, sanitation, or validation of transport security.",
+        concept: "APIs frequently integrate with third-party microservices (e.g. payment processors, geocoders, social logins). If the server trusts these services blindly and processes their data without validation, it can be vulnerable to SQL injection, XSS, or buffer overflows if the third-party service is compromised.",
+        remediation: [
+          "Sanitize and validate all data received from external third-party API services before processing it.",
+          "Enforce transport encryption (HTTPS) and verify certificates when connecting to external APIs.",
+          "Implement proper timeouts, retry limits, and circuit breakers for external integrations."
+        ],
+        vulnerableCode: `// Express.js Vulnerable Integration
+const axios = require('axios');
+
+app.post('/api/weather/report', async (req, res) => {
+  // Fetch details from third-party integration
+  const response = await axios.get('https://api.external-weather.com/today');
+  const forecast = response.data.summary;
+  
+  // Vulnerability: Concatenates third-party data directly into database query
+  // or embeds it in a webpage without escaping, leading to SQLi or XSS.
+  const query = "INSERT INTO reports (info) VALUES ('" + forecast + "')";
+  await db.executeRaw(query);
+  
+  res.json({ status: 'Report recorded' });
+});`,
+        secureCode: `// Express.js Secure Integration
+const axios = require('axios');
+const validator = require('validator');
+
+app.post('/api/weather/report', async (req, res) => {
+  try {
+    const response = await axios.get('https://api.external-weather.com/today', {
+      timeout: 5000 // Mitigation 1: Enforce strict connection timeout
+    });
+
+    const rawForecast = response.data.summary;
+
+    // Mitigation 2: Sanitize and validate external input before processing
+    if (typeof rawForecast !== 'string' || !validator.isAlphanumeric(rawForecast.replace(/\\s/g, ''))) {
+      return res.status(422).json({ error: 'Invalid response signature from external provider' });
+    }
+
+    // Mitigation 3: Use parameterized database queries to prevent SQL injection
+    const query = "INSERT INTO reports (info) VALUES ($1)";
+    await db.query(query, [rawForecast]);
+
+    res.json({ status: 'Report recorded successfully' });
+  } catch (err) {
+    res.status(502).json({ error: 'Bad Gateway: External service error or timeout' });
+  }
+});`
+      }
+    ];
+
+    function App() {
+      const [selectedVuln, setSelectedVuln] = React.useState(vulnerabilities[0]);
+      const [searchQuery, setSearchQuery] = React.useState('');
+      const [activeTab, setActiveTab] = React.useState('overview'); // overview, code, simulation
+      
+      // Simulation States
+      const [simEngineSecure, setSimEngineSecure] = React.useState(false);
+      const [simAttempts, setSimAttempts] = React.useState(0);
+      const [simInputs, setSimInputs] = React.useState({
+        API1: { userId: '102' },
+        API2: { password: '' },
+        API3: { body: '{\n  "displayName": "Alice",\n  "role": "admin"\n}' },
+        API4: { limit: '20' },
+        API5: { path: '/api/v1/user/profile' },
+        API6: {},
+        API7: { imageUrl: 'https://images.unsplash.com/photo-1' },
+        API8: {},
+        API9: { path: '/api/v1/user/profile?id=101' },
+        API10: { forecast: "Rainy' OR 1=1 --" }
+      });
+      const [simResponse, setSimResponse] = React.useState(null);
+      const [simLogs, setSimLogs] = React.useState([]);
+
+      // Initialize Lucide Icons after mount and updates
+      React.useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [selectedVuln, activeTab, simEngineSecure, simResponse, simLogs]);
+
+      const filteredVulns = vulnerabilities.filter(v => 
+        v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        v.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        v.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+      const handleSelectVuln = (vuln) => {
+        setSelectedVuln(vuln);
+        setActiveTab('overview');
+        setSimResponse(null);
+        setSimLogs([]);
+        setSimAttempts(0);
+      };
+
+      const updateSimInput = (key, val) => {
+        setSimInputs(prev => ({
+          ...prev,
+          [selectedVuln.id]: {
+            ...prev[selectedVuln.id],
+            [key]: val
+          }
+        }));
+      };
+
+      // Realtime simulator engine
+      const runSimulation = () => {
+        const id = selectedVuln.id;
+        const inputs = simInputs[id];
+        const isSecure = simEngineSecure;
+        const logs = [];
+        let response = { status: 200, headers: {}, body: {} };
+
+        logs.push(`[${new Date().toLocaleTimeString()}] INFO: Server received HTTP request.`);
+
+        if (id === 'API1') {
+          const uId = inputs.userId;
+          logs.push(`ROUTE: GET /api/v1/profile?userId=${uId}`);
+          logs.push(`AUTH: Verified JWT signature for user_id = 102 (Role: member).`);
+          
+          if (isSecure) {
+            logs.push(`SECURITY: Validation rule: User session ID (102) must match request target userId (${uId}).`);
+            if (uId === '102') {
+              logs.push(`SUCCESS: Validation passed. Matching profile retrieved.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'self' },
+                body: { id: 102, username: 'alice102', email: 'alice@company.com', status: 'active' }
+              };
+            } else {
+              logs.push(`DENIED: Authorization Failure. Logged-in user 102 is forbidden from reading object ID ${uId}.`);
+              response = {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'Forbidden: Access to requested object resources is denied.' }
+              };
+            }
+          } else {
+            logs.push(`SECURITY WARNING: BOLA bypass. Skipping owner verification logic.`);
+            if (uId === '101') {
+              logs.push(`LEAK DETECTED: Returning victim profile context directly from query param target.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'BOLA' },
+                body: { id: 101, username: 'victim101', email: 'victim_private@target.com', accountBalance: '$450,210.00', SSN: 'XXX-XX-1234' }
+              };
+            } else {
+              logs.push(`SUCCESS: Returning profile of user ID ${uId} without check.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { id: uId, username: `user_${uId}`, email: `user${uId}@company.com`, status: 'active' }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API2') {
+          const pass = inputs.password;
+          const currentAttempts = simAttempts + 1;
+          setSimAttempts(currentAttempts);
+          
+          logs.push(`ROUTE: POST /api/v1/auth/login`);
+          logs.push(`PARAMS: { username: "admin", password: "${pass ? '•'.repeat(pass.length) : '(empty)'}" }`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Checking request window count for IP.`);
+            logs.push(`COUNTER: Attempt number ${currentAttempts} registered within rate limit bounds.`);
+            
+            if (currentAttempts > 5) {
+              logs.push(`DENIED: Rate limits triggered. IP temporarily locked out (HTTP 429).`);
+              response = {
+                status: 429,
+                headers: { 'Content-Type': 'application/json', 'Retry-After': '900' },
+                body: { error: 'Too many login attempts. Locked out for 15 minutes.' }
+              };
+            } else if (pass === 'password123') {
+              logs.push(`SUCCESS: Password verified against secure salted bcrypt hash.`);
+              logs.push(`AUTH: Issuing strong HS256 JWT expiring in 1 hour.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYWRtaW4iLCJleHAiOjE3MTkwNDAwMDB9.v_X7g...' }
+              };
+            } else {
+              logs.push(`DENIED: Invalid credential check. Attempts remaining before lockout: ${5 - currentAttempts}`);
+              response = {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'Invalid credentials.' }
+              };
+            }
+          } else {
+            logs.push(`SECURITY WARNING: Infinite attempts permitted. Rate limits disabled.`);
+            if (pass === 'password123') {
+              logs.push(`SUCCESS: plaintext verification match. Generating weak JWT token with no expiry.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { token: 'eyJhbGciOiJub25lIn0.eyJuYW1lIjoiYWRtaW4ifQ.' }
+              };
+            } else {
+              logs.push(`DENIED: Password guess incorrect. Connection kept open for next brute-force attack.`);
+              response = {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'Invalid credentials.' }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API3') {
+          let payload = {};
+          try {
+            payload = JSON.parse(inputs.body);
+            logs.push(`ROUTE: PUT /api/v1/users/102`);
+            logs.push(`PAYLOAD: Parsed input data successfully.`);
+          } catch(e) {
+            logs.push(`ERROR: Failed to parse input body. Invalid JSON format.`);
+            setSimResponse({
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+              body: { error: 'Bad Request: Invalid JSON body' }
+            });
+            setSimLogs(logs);
+            return;
+          }
+
+          if (isSecure) {
+            logs.push(`SECURITY: Applying Parameter Whitelist validation on request body.`);
+            const sanitizedUser = { id: 102, username: 'alice102', role: 'member' };
+            
+            if (payload.displayName) {
+              logs.push(`PARAMETER ACCEPTED: Updating 'displayName' to '${payload.displayName}'.`);
+              sanitizedUser.displayName = payload.displayName;
+            }
+            if (payload.role) {
+              logs.push(`SECURITY ALERT: Parameter 'role' is forbidden from client modification. Discarding.`);
+            }
+            response = {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: { message: 'Profile updated', user: sanitizedUser }
+            };
+          } else {
+            logs.push(`SECURITY WARNING: Mapping JSON payload keys directly to database model (Mass Assignment).`);
+            const vulnerableUser = { id: 102, username: 'alice102', role: payload.role || 'member' };
+            if (payload.displayName) vulnerableUser.displayName = payload.displayName;
+            
+            if (payload.role && payload.role === 'admin') {
+              logs.push(`LEAK DETECTED: Client successfully escalated role privileges to 'admin'.`);
+            }
+            response = {
+              status: 200,
+              headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'BOPLA-MassAssignment' },
+              body: { message: 'Profile updated', user: vulnerableUser }
+            };
+          }
+        }
+
+        else if (id === 'API4') {
+          const reqLimit = parseInt(inputs.limit) || 0;
+          logs.push(`ROUTE: GET /api/v1/records?limit=${reqLimit}`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Enforcing page query limits.`);
+            let activeLimit = reqLimit;
+            if (reqLimit > 100) {
+              logs.push(`WARNING: Requested limit ${reqLimit} exceeds boundary max of 100. Clamping to 100.`);
+              activeLimit = 100;
+            }
+            logs.push(`SUCCESS: Fetching ${activeLimit} records from backend database.`);
+            response = {
+              status: 200,
+              headers: { 'Content-Type': 'application/json', 'X-Page-Size': `${activeLimit}` },
+              body: { count: activeLimit, records: Array(activeLimit).fill({ resource: 'safe_data_slice' }) }
+            };
+          } else {
+            logs.push(`SECURITY WARNING: Processing database query limit parameter without safety boundaries.`);
+            if (reqLimit > 50000) {
+              logs.push(`CRITICAL: Server heap allocation exhausted while serializing ${reqLimit} records.`);
+              logs.push(`FATAL ERROR: JavaScript Out of Memory (OOM) crash occurred.`);
+              response = {
+                status: 503,
+                headers: { 'Connection': 'close' },
+                body: { error: 'FATAL: JavaScript heap out of memory. Server process crashed.' }
+              };
+            } else {
+              logs.push(`SUCCESS: Returning heavy database memory allocations for ${reqLimit} rows.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { count: reqLimit, records: Array(reqLimit).fill({ resource: 'vulnerable_data_slice_allocated_on_heap' }) }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API5') {
+          const path = inputs.path;
+          logs.push(`ROUTE: POST ${path}`);
+          logs.push(`AUTH: Verified user session context: id = 102, role = member.`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Checking endpoint access controls.`);
+            if (path.includes('/admin/')) {
+              logs.push(`DENIED: Privilege check failed. Role 'member' lacks authorization for administrative endpoints.`);
+              response = {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'Forbidden: Admin access required.' }
+              };
+            } else {
+              logs.push(`SUCCESS: Route authorized for member role access.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { status: 'Success', details: 'Profile endpoint returned.' }
+              };
+            }
+          } else {
+            logs.push(`SECURITY WARNING: BFLA vulnerable. Exposing administrative function endpoints with no role check.`);
+            if (path.includes('/admin/')) {
+              logs.push(`EXPLOIT DETECTED: Non-admin user 102 successfully deleted database tables.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'BFLA' },
+                body: { success: true, message: 'Administrative user deleted action completed.', targetIdDeleted: 99 }
+              };
+            } else {
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { status: 'Success' }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API6') {
+          const currentAttempts = simAttempts + 1;
+          setSimAttempts(currentAttempts);
+          
+          logs.push(`ROUTE: POST /api/v1/reminders/sms`);
+          logs.push(`PARAMS: { phoneNumber: "+15550199", message: "Verification Alert" }`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Tracking SMS queue volumes...`);
+            if (currentAttempts > 3) {
+              logs.push(`DENIED: Business logic limit triggered (Max 3 SMS/hr). Request blocked.`);
+              response = {
+                status: 429,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'SMS limit reached. Complete CAPTCHA to bypass lockout.' }
+              };
+            } else {
+              logs.push(`SUCCESS: Charging SMS gateway ($0.05). Dispatching verification SMS.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { success: true, smsSentCount: currentAttempts }
+              };
+            }
+          } else {
+            logs.push(`SECURITY WARNING: Bot scripting check disabled. Allowing unlimited automated flows.`);
+            logs.push(`SUCCESS: Charging SMS gateway ($0.05). Sending SMS. Cost incurred: $${(currentAttempts * 0.05).toFixed(2)}.`);
+            response = {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: { success: true, warning: 'Unchecked loop count', totalGatewayChargesUSD: currentAttempts * 0.05 }
+            };
+          }
+        }
+
+        else if (id === 'API7') {
+          const url = inputs.imageUrl;
+          logs.push(`ROUTE: POST /api/v1/preview`);
+          logs.push(`PROXY REQUEST: App server initiating DNS lookup for hostname...`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Validating URL scheme...`);
+            if (!url.startsWith('https://')) {
+              logs.push(`DENIED: Protocol scheme rejected. Only HTTPS preview targets are supported.`);
+              response = {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: { error: 'Bad Request: Insecure URL protocol.' }
+              };
+            } else {
+              logs.push(`SECURITY: Resolving URL destination IP addresses...`);
+              if (url.includes('169.254') || url.includes('localhost') || url.includes('127.0.0.1')) {
+                logs.push(`DENIED: Resolved IP matches private loopback/internal CIDR block (RFC 1918). SSRF attempt blocked.`);
+                response = {
+                  status: 403,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: { error: 'Forbidden: Access to private networks is blocked.' }
+                };
+              } else {
+                logs.push(`SUCCESS: Resolved to public IP (8.8.8.8). Fetching image resource...`);
+                response = {
+                  status: 200,
+                  headers: { 'Content-Type': 'image/png' },
+                  body: { sizeBytes: 15420, contentType: 'image/png' }
+                };
+              }
+            }
+          } else {
+            logs.push(`SECURITY WARNING: Proxying raw URL fetches directly (SSRF Vulnerable).`);
+            if (url.includes('169.254.169.254')) {
+              logs.push(`EXPLOIT DETECTED: Server connected directly to AWS IMDS metadata server.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'text/plain', 'X-Vulnerable-Bypass': 'SSRF' },
+                body: `[AWS EC2 Instance metadata]\nrole: aws-backup-s3-service-role\nAccessKeyId: ASIAZ3PF41X7851\nSecretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYzPE\nSessionToken: IQoJb3JpZ2luX2VjEOb...`
+              };
+            } else {
+              logs.push(`SUCCESS: Fetching remote URL data directly.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+                body: { data: 'Raw page source preview' }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API8') {
+          logs.push(`ROUTE: GET /api/v1/debug/db-status`);
+          logs.push(`DATABASE: Query execution failed. Cause: Table 'users' does not contain field 'user_pass_temp'.`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Intercepting server error. Stripping internal configuration details.`);
+            response = {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+              body: { error: 'An unexpected internal error occurred. Request Reference: ERR_85412.' }
+            };
+          } else {
+            logs.push(`SECURITY WARNING: Permissive debugger active. Verbose stack trace returned to client.`);
+            response = {
+              status: 500,
+              headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'Security-Misconfig' },
+              body: {
+                error: "SQL Execution Error: Table 'users' does not contain field 'user_pass_temp'",
+                stack: "Error: at Query.run (/app/node_modules/pg/lib/query.js:124:16)\nat Connection.query (/app/node_modules/pg/lib/connection.js:98:24)\nat db.js:45\nat /app/server.js:84",
+                env: { databaseHost: "127.0.0.1", dbUser: "db_admin_root", dbName: "production_master" }
+              }
+            };
+          }
+        }
+
+        else if (id === 'API9') {
+          const path = inputs.path;
+          logs.push(`ROUTE: GET ${path}`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Checking endpoint version deprecation status.`);
+            if (path.includes('/v1/')) {
+              logs.push(`DENIED: Legacy V1 APIs are retired and decommissioned.`);
+              response = {
+                status: 410,
+                headers: { 'Content-Type': 'application/json', 'X-API-Deprecation': 'v1' },
+                body: { error: 'API Version 1 is deprecated. Please update routes to /api/v2/.' }
+              };
+            } else {
+              logs.push(`SUCCESS: Running active version 2 authorization controllers.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { id: 102, username: 'alice102', email: 'alice@company.com' }
+              };
+            }
+          } else {
+            logs.push(`SECURITY WARNING: Legacy V1 routes left active and unpatched (Improper Inventory).`);
+            if (path.includes('/v1/')) {
+              logs.push(`EXPLOIT DETECTED: Invoking outdated endpoint lacking BOLA authorization guards.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'Improper-Inventory-Management' },
+                body: { id: 101, username: 'victim101', email: 'victim_private@target.com', accountBalance: '$450,210.00' }
+              };
+            } else {
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: { id: 102, username: 'alice102', email: 'alice@company.com' }
+              };
+            }
+          }
+        }
+
+        else if (id === 'API10') {
+          const forecast = inputs.forecast;
+          logs.push(`ROUTE: POST /api/v1/weather/report`);
+          logs.push(`PARAM INPUT: forecastSummary = "${forecast}"`);
+
+          if (isSecure) {
+            logs.push(`SECURITY: Sanitizing input characters. Stripping SQL keywords.`);
+            logs.push(`SQL PARSER: Executing parameterized query safely.`);
+            response = {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' },
+              body: { success: true, details: 'Sanitized weather record inserted' }
+            };
+          } else {
+            logs.push(`SECURITY WARNING: Injecting third-party input directly into raw SQL query.`);
+            logs.push(`SQL EXECUTE: INSERT INTO weather (info) VALUES ('${forecast}')`);
+            if (forecast.includes("'")) {
+              logs.push(`EXPLOIT DETECTED: SQL parsing boundary broken. Additional query block executed.`);
+              response = {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', 'X-Vulnerable-Bypass': 'Unsafe-API-Consumption' },
+                body: {
+                  status: 'Success',
+                  sqlDump: [
+                    { id: 1, credentials_key: 'PRIVATE_RSA_KEY_12451' },
+                    { id: 2, system_api_token: 'slack-bot-secret-key-tXb...' }
+                  ]
+                }
+              };
+            } else {
+              response = {
+                status: 201,
+                headers: { 'Content-Type': 'application/json' },
+                body: { success: true }
+              };
+            }
+          }
+        }
+
+        logs.push(`[${new Date().toLocaleTimeString()}] INFO: Server dispatched HTTP response.`);
+        setSimResponse(response);
+        setSimLogs(logs);
+      };
+
+      const getSeverityBadgeClass = (severity) => {
+        switch (severity) {
+          case 'High': return 'bg-brand-dangerBg text-red-400 border-red-900/50';
+          case 'Medium': return 'bg-brand-warningBg text-amber-400 border-amber-900/50';
+          case 'Low': return 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50';
+          default: return 'bg-slate-800 text-slate-400 border-slate-700';
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-brand-dark bg-grid flex flex-col">
+          {/* Top Banner & Header */}
+          <header className="border-b border-slate-800/80 bg-brand-dark/95 backdrop-blur sticky top-0 z-40">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                  <i data-lucide="shield-alert" className="text-white w-6 h-6"></i>
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    OWASP API <span className="text-blue-500 font-semibold">Top 10</span> (2023)
+                  </h1>
+                  <p className="text-xs text-slate-400">Interactive PoC & Remediation Dashboard</p>
+                </div>
+              </div>
+              
+              {/* Search bar */}
+              <div className="relative w-full sm:w-80">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <i data-lucide="search" className="h-5 w-5 text-slate-500"></i>
+                </span>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                  placeholder="Search vulnerabilities..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+          </header>
+
+          {/* Main Layout */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Sidebar list (4 cols) */}
+            <aside className="lg:col-span-4 flex flex-col gap-4">
+              <h2 className="text-sm font-semibold tracking-wider text-slate-500 uppercase px-2">Vulnerabilities</h2>
+              <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-220px)] pr-2">
+                {filteredVulns.map((vuln) => (
+                  <button
+                    key={vuln.id}
+                    onClick={() => handleSelectVuln(vuln)}
+                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex flex-col gap-2 ${
+                      selectedVuln.id === vuln.id
+                        ? 'bg-blue-600/10 border-blue-500/50 shadow-md shadow-blue-500/5'
+                        : 'bg-brand-card/40 hover:bg-brand-card/70 border-slate-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-mono text-xs font-semibold text-blue-400">{vuln.id}</span>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getSeverityBadgeClass(vuln.severity)}`}>
+                        {vuln.severity}
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-sm text-slate-200 leading-tight line-clamp-1">{vuln.title.split(': ')[1] || vuln.title}</h3>
+                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{vuln.description}</p>
+                  </button>
+                ))}
+                {filteredVulns.length === 0 && (
+                  <div className="text-center py-8 text-slate-500 text-sm">
+                    No vulnerabilities match your search.
+                  </div>
+                )}
+              </div>
+            </aside>
+
+            {/* Content Panel (8 cols) */}
+            <main className="lg:col-span-8 flex flex-col gap-6 animate-fade-in">
+              
+              {/* Header Card */}
+              <div className="glass-card rounded-2xl p-6 flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/60 pb-4">
+                  <div>
+                    <span className="font-mono text-sm text-blue-500 font-medium">{selectedVuln.id} classification</span>
+                    <h2 className="text-2xl font-bold text-white mt-1">{selectedVuln.title}</h2>
+                  </div>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getSeverityBadgeClass(selectedVuln.severity)}`}>
+                    {selectedVuln.severity} Severity
+                  </span>
+                </div>
+
+                {/* Navigation Tabs */}
+                <div className="flex border-b border-slate-800/60 -mx-6 px-6">
+                  {[
+                    { id: 'overview', label: 'Overview', icon: 'book-open' },
+                    { id: 'code', label: 'Code Comparison', icon: 'code-2' },
+                    { id: 'simulation', label: 'Live HTTP Playground', icon: 'play' }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-2 py-3 px-4 border-b-2 text-sm font-medium transition-all ${
+                        activeTab === tab.id
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <i data-lucide={tab.icon} className="w-4 h-4"></i>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Contents */}
+                <div className="pt-2">
+                  
+                  {/* OVERVIEW TAB */}
+                  {activeTab === 'overview' && (
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Vulnerability Concept</h3>
+                        <p className="text-slate-300 text-sm leading-relaxed">{selectedVuln.concept}</p>
+                      </div>
+
+                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+                        <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                          <i data-lucide="shield-check" className="w-4 h-4 text-emerald-500"></i>
+                          Defensive Remediation Checklist
+                        </h3>
+                        <ul className="space-y-2.5">
+                          {selectedVuln.remediation.map((item, idx) => (
+                            <li key={idx} className="flex gap-2.5 text-xs text-slate-400 items-start">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0"></span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CODE TAB */}
+                  {activeTab === 'code' && (
+                    <div className="space-y-6">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Compare the differences in structural design patterns. See how neglecting input controls introduces vulnerabilities, and how defensive design patterns close the gap.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Vulnerable Code Card */}
+                        <div className="flex flex-col border border-red-950/60 bg-red-950/10 rounded-xl overflow-hidden">
+                          <div className="bg-brand-dangerBg/50 border-b border-red-950/60 px-4 py-2 flex items-center gap-2">
+                            <i data-lucide="x-circle" className="text-red-400 w-4 h-4"></i>
+                            <span className="text-xs font-semibold text-red-400 font-mono">Vulnerable Logic</span>
+                          </div>
+                          <pre className="p-4 text-xs font-mono overflow-x-auto text-red-200/90 whitespace-pre-wrap select-all leading-relaxed bg-black/35 flex-1">
+                            {selectedVuln.vulnerableCode}
+                          </pre>
+                        </div>
+
+                        {/* Secure Code Card */}
+                        <div className="flex flex-col border border-emerald-950/60 bg-emerald-950/10 rounded-xl overflow-hidden">
+                          <div className="bg-brand-safeBg/50 border-b border-emerald-950/60 px-4 py-2 flex items-center gap-2">
+                            <i data-lucide="check-circle-2" className="text-emerald-400 w-4 h-4"></i>
+                            <span className="text-xs font-semibold text-emerald-400 font-mono">Mitigated Logic</span>
+                          </div>
+                          <pre className="p-4 text-xs font-mono overflow-x-auto text-emerald-200/90 whitespace-pre-wrap select-all leading-relaxed bg-black/35 flex-1">
+                            {selectedVuln.secureCode}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SIMULATION TAB (LIVE HTTP CLIENT PLAYGROUND) */}
+                  {activeTab === 'simulation' && (
+                    <div className="space-y-6">
+                      
+                      {/* Safety Engine Switcher */}
+                      <div className="flex items-center justify-between flex-wrap gap-3 bg-slate-900/60 border border-slate-800/80 px-4 py-3 rounded-xl">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-300">Live HTTP Sandbox</h4>
+                          <p className="text-xs text-slate-400">Modify the request parameters and execute tests on both code versions in real-time.</p>
+                        </div>
+                        
+                        <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                          <button
+                            onClick={() => { setSimEngineSecure(false); setSimResponse(null); setSimLogs([]); setSimAttempts(0); }}
+                            className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                              !simEngineSecure 
+                                ? 'bg-red-500/20 text-red-400 border border-red-900/30' 
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Vulnerable Code Engine
+                          </button>
+                          <button
+                            onClick={() => { setSimEngineSecure(true); setSimResponse(null); setSimLogs([]); setSimAttempts(0); }}
+                            className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                              simEngineSecure 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-900/30' 
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Secure Code Engine
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Request Builder Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        {/* Request Builder (Left Pane) */}
+                        <div className="border border-slate-800 rounded-xl p-5 bg-brand-card/30 flex flex-col justify-between min-h-[380px]">
+                          <div>
+                            <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-2">
+                              <i data-lucide="send" className="w-4 h-4 text-blue-500"></i>
+                              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">HTTP Request Client</span>
+                            </div>
+                            
+                            {/* DYNAMIC FORM ACCORDING TO SELECTED VULNERABILITY */}
+                            
+                            {/* API1: BOLA */}
+                            {selectedVuln.id === 'API1' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-emerald-400 font-bold">GET</span>
+                                  <span>/api/v1/profile</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Query Parameters</label>
+                                  <div className="flex gap-2 items-center bg-slate-900/60 rounded-lg p-2 border border-slate-800">
+                                    <span className="text-xs text-slate-500 font-mono">?userId=</span>
+                                    <input
+                                      type="text"
+                                      className="bg-transparent text-xs text-slate-200 focus:outline-none flex-1 font-mono"
+                                      value={simInputs.API1.userId}
+                                      onChange={(e) => updateSimInput('userId', e.target.value)}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Authenticated context: 102. Try changing value to <b>101</b> to attempt access bypass)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API2: Broken Auth */}
+                            {selectedVuln.id === 'API2' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-amber-500 font-bold">POST</span>
+                                  <span>/api/v1/auth/login</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1">Username</label>
+                                  <input type="text" disabled className="w-full bg-slate-900/40 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-500" value="admin" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Type credential guess..."
+                                    className="w-full bg-slate-900/60 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+                                    value={simInputs.API2.password}
+                                    onChange={(e) => updateSimInput('password', e.target.value)}
+                                  />
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Target password: <b>password123</b>. Test brute forcing repeatedly with random words)
+                                  </span>
+                                </div>
+                                {simAttempts > 0 && (
+                                  <div className="text-[10px] bg-slate-900 p-2 rounded border border-slate-800 font-mono text-slate-400">
+                                    Total Login Requests Executed: <span className="text-amber-400 font-bold">{simAttempts}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* API3: BOPLA */}
+                            {selectedVuln.id === 'API3' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-blue-500 font-bold">PUT</span>
+                                  <span>/api/v1/users/102</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">JSON Payload Body</label>
+                                  <textarea
+                                    rows="5"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-blue-500"
+                                    value={simInputs.API3.body}
+                                    onChange={(e) => updateSimInput('body', e.target.value)}
+                                  ></textarea>
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Modify JSON properties. Try sending custom properties like <b>"role": "admin"</b>)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API4: Resource Consumption */}
+                            {selectedVuln.id === 'API4' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-emerald-400 font-bold">GET</span>
+                                  <span>/api/v1/records</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Query Parameters</label>
+                                  <div className="flex gap-2 items-center bg-slate-900/60 rounded-lg p-2 border border-slate-800">
+                                    <span className="text-xs text-slate-500 font-mono">?limit=</span>
+                                    <input
+                                      type="number"
+                                      className="bg-transparent text-xs text-slate-200 focus:outline-none flex-1 font-mono"
+                                      value={simInputs.API4.limit}
+                                      onChange={(e) => updateSimInput('limit', e.target.value)}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Test resource allocation. Try values like <b>25</b> vs a heavy load of <b>100000</b>)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API5: BFLA */}
+                            {selectedVuln.id === 'API5' && (
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">HTTP Request Target Endpoint Path</label>
+                                  <div className="flex bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                    <span className="text-amber-500 font-bold mr-2">POST</span>
+                                    <select
+                                      className="bg-transparent text-slate-200 focus:outline-none flex-1 font-mono text-xs cursor-pointer"
+                                      value={simInputs.API5.path}
+                                      onChange={(e) => updateSimInput('path', e.target.value)}
+                                    >
+                                      <option className="bg-slate-950 text-slate-200" value="/api/v1/user/profile">/api/v1/user/profile</option>
+                                      <option className="bg-slate-950 text-slate-200" value="/api/v1/admin/delete_user">/api/v1/admin/delete_user</option>
+                                    </select>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Change route path to test privilege boundaries on administrative functions)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API6: Sensitive Business Flows */}
+                            {selectedVuln.id === 'API6' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-amber-500 font-bold">POST</span>
+                                  <span>/api/v1/reminders/sms</span>
+                                </div>
+                                <div className="text-xs text-slate-400 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+                                  This request triggers the SMS validation gateway. Without rate limits, script bots can automate OTP triggers repeatedly.
+                                </div>
+                                {simAttempts > 0 && (
+                                  <div className="text-[10px] bg-slate-900 p-2 rounded border border-slate-800 font-mono text-slate-400 flex flex-col gap-1">
+                                    <div>SMS Requests sent: <span className="text-blue-400 font-bold">{simAttempts}</span></div>
+                                    <div>Simulated Cost: <span className="text-amber-500 font-bold">${(simAttempts * 0.05).toFixed(2)}</span></div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* API7: SSRF */}
+                            {selectedVuln.id === 'API7' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-amber-500 font-bold">POST</span>
+                                  <span>/api/v1/preview</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Preview Resource URL</label>
+                                  <input
+                                    type="text"
+                                    className="w-full bg-slate-900/60 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+                                    value={simInputs.API7.imageUrl}
+                                    onChange={(e) => updateSimInput('imageUrl', e.target.value)}
+                                  />
+                                  <span className="text-[10px] text-slate-500 mt-1.5 block">
+                                    Try querying AWS internal EC2 metadata: <b>http://169.254.169.254/latest/meta-data/</b>
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API8: Security Misconfig */}
+                            {selectedVuln.id === 'API8' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-emerald-400 font-bold">GET</span>
+                                  <span>/api/v1/debug/db-status</span>
+                                </div>
+                                <div className="text-xs text-slate-400 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+                                  Clicking Send will trigger a simulated query execution exception in the database layer.
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API9: Improper Inventory */}
+                            {selectedVuln.id === 'API9' && (
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Select Route Version</label>
+                                  <div className="flex bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                    <span className="text-emerald-400 font-bold mr-2">GET</span>
+                                    <select
+                                      className="bg-transparent text-slate-200 focus:outline-none flex-1 font-mono text-xs cursor-pointer"
+                                      value={simInputs.API9.path}
+                                      onChange={(e) => updateSimInput('path', e.target.value)}
+                                    >
+                                      <option className="bg-slate-950 text-slate-200" value="/api/v1/user/profile?id=101">GET /api/v1/user/profile?id=101 (Deprecated/Legacy)</option>
+                                      <option className="bg-slate-950 text-slate-200" value="/api/v2/user/profile">GET /api/v2/user/profile (Current/Protected)</option>
+                                    </select>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Legacy routes often get neglected and left unpatched, leaving BOLA checks inactive)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* API10: Unsafe Consumption */}
+                            {selectedVuln.id === 'API10' && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 font-mono text-xs text-slate-300">
+                                  <span className="text-amber-500 font-bold">POST</span>
+                                  <span>/api/v1/weather/report</span>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Third-Party Data Input</label>
+                                  <input
+                                    type="text"
+                                    className="w-full bg-slate-900/60 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+                                    value={simInputs.API10.forecast}
+                                    onChange={(e) => updateSimInput('forecast', e.target.value)}
+                                  />
+                                  <span className="text-[10px] text-slate-500 mt-1 block">
+                                    (Simulate unescaped data from integration. Try injecting SQL strings: <b>Rainy' OR 1=1 --</b>)
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+                          
+                          <button
+                            onClick={runSimulation}
+                            className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 border mt-6 shadow-md ${
+                              simEngineSecure
+                                ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500/30 text-white shadow-emerald-500/5'
+                                : 'bg-red-600 hover:bg-red-500 border-red-500/30 text-white shadow-red-500/5'
+                            }`}
+                          >
+                            Send HTTP Request
+                          </button>
+                        </div>
+
+                        {/* Terminal Response Console (Right Pane) */}
+                        <div className="flex flex-col border border-slate-800 rounded-xl overflow-hidden min-h-[380px]">
+                          
+                          {/* Console Header */}
+                          <div className="bg-slate-950/80 border-b border-slate-800/80 px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500"></span>
+                              <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                              <span className="text-xs font-semibold text-slate-400 font-mono ml-2">Server Console & Output</span>
+                            </div>
+                            {simResponse && (
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                                simResponse.status >= 400
+                                  ? 'bg-red-950/40 text-red-400 border-red-900/40'
+                                  : 'bg-emerald-950/40 text-emerald-400 border-emerald-900/40'
+                              }`}>
+                                HTTP {simResponse.status}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Console Screens */}
+                          <div className="flex-1 bg-slate-950 p-4 font-mono text-[11px] flex flex-col gap-4 overflow-y-auto max-h-[320px]">
+                            
+                            {/* Execution Log */}
+                            <div className="space-y-1">
+                              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 border-b border-slate-900 pb-1 mb-1">
+                                Engine Process Logs
+                              </div>
+                              {simLogs.length === 0 ? (
+                                <div className="text-slate-600 italic">Logs will display here after sending a request...</div>
+                              ) : (
+                                simLogs.map((log, idx) => (
+                                  <div key={idx} className={`${
+                                    log.includes('DENIED') || log.includes('ERROR') || log.includes('ALERT')
+                                      ? 'text-red-400'
+                                      : log.includes('WARNING')
+                                      ? 'text-amber-400'
+                                      : log.includes('SUCCESS')
+                                      ? 'text-emerald-400'
+                                      : 'text-slate-400'
+                                  }`}>
+                                    {log}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            {/* HTTP Response Body */}
+                            <div className="space-y-1 mt-auto">
+                              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 border-b border-slate-900 pb-1 mb-1">
+                                HTTP Response Body
+                              </div>
+                              {simResponse ? (
+                                <pre className="text-slate-300 bg-black/45 p-2 rounded border border-slate-900/60 overflow-x-auto whitespace-pre-wrap select-all max-h-[140px]">
+                                  {JSON.stringify(simResponse.body, null, 2)}
+                                </pre>
+                              ) : (
+                                <div className="text-slate-600 italic">No response returned yet.</div>
+                              )}
+                            </div>
+
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </main>
+          </div>
+
+          {/* Footer */}
+          <footer className="border-t border-slate-900/80 bg-brand-dark/40 py-6 mt-12">
+            <div className="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500">
+              OWASP® API Security Top 10 (2023) is a registered trademark of the OWASP Foundation. This dashboard is for educational and training purposes.
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    // Mount the application to the root container
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
+  </script>
+
+</body>
+</html>
